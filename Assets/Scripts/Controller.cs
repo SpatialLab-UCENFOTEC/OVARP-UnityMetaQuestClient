@@ -2,6 +2,9 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Networking;
+using UnityEngine.InputSystem;
+using UnityEngine.XR;
+using XRCommonUsages = UnityEngine.XR.CommonUsages;
 using System;
 using System.IO;
 using System.Text;
@@ -121,7 +124,6 @@ public class Controller : MonoBehaviour
     }
 
 
-    public UdpSocket client;
     public GameObject gameObject;
     public GameObject agent;  //Agent
 
@@ -174,7 +176,18 @@ public class Controller : MonoBehaviour
         string name = "Daniel";
         // messages.Add("{\"role\": \"system\", \"content\": \"You are my best friend. Answer in 3 sentences or less and be friendly. Ask for more information if needed. You need to respond like a real person in a conversational tone. You are not to reveal you are not a real person. If asked for advice, always answer as if you were a person. Remember my name is Rodrigo.\"}");
         messagesForEvent.Add("{\"role\": \"system\", \"content\": \"You are an assistant that is supposed to get events from text. I will give you a message and today's date and you should reply with event and date. So if the message is 'I have a flower contest on friday. Today:11/20/23, Tuesday' then you would return the following: 'Event: Flower event. Date: 11/24/24.' If there is no event to extract then return the string 'No event'\"}");
-        // Copy keys for rolling utterance indices
+
+        // Guard: warn early if API key is missing so the error is visible in logs/ScreenLogger
+        if (string.IsNullOrEmpty(openAIApiKey))
+            Debug.LogError("[Controller] openAIApiKey is not set. Set it in the Inspector on the Controller GameObject.");
+
+        // Default Nova persona — SetName() overrides this when called from UI/WebGL
+        if (messages.Count == 0)
+        {
+            string today = DateTime.Now.ToString("MM/dd/yyyy");
+            messages.Add("{\"role\": \"system\", \"content\": \"DateFormat: mm/dd/yyyy. Today: " + today + ".\"}");
+            messages.Add("{\"role\": \"system\", \"content\": \"You are a trusted companion named Nova. Answer in 3 sentences or less. Be friendly, curious, and conversational. Never reveal you are not human.\"}");
+        }
     }
 
     // Update is called once per frame
@@ -226,6 +239,37 @@ public class Controller : MonoBehaviour
         {
             chat.killTempAgent();
             chat.sendAgentMessage(responses.Dequeue());
+        }
+
+        CheckInputTriggers();
+    }
+
+    private bool rightTriggerWasPressed = false;
+
+    private void CheckInputTriggers()
+    {
+        // Desktop: spacebar toggle
+        if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+        {
+            ProcessInput();
+            return;
+        }
+
+        // Meta Quest: right controller trigger (press to start, release to stop)
+        var rightHandDevices = new System.Collections.Generic.List<UnityEngine.XR.InputDevice>();
+        InputDevices.GetDevicesWithCharacteristics(
+            InputDeviceCharacteristics.Right | InputDeviceCharacteristics.Controller,
+            rightHandDevices
+        );
+
+        if (rightHandDevices.Count > 0)
+        {
+            rightHandDevices[0].TryGetFeatureValue(XRCommonUsages.triggerButton, out bool triggerPressed);
+            if (triggerPressed && !rightTriggerWasPressed)
+                ProcessInput();
+            else if (!triggerPressed && rightTriggerWasPressed)
+                ProcessInput();
+            rightTriggerWasPressed = triggerPressed;
         }
     }
 
@@ -489,7 +533,7 @@ public class Controller : MonoBehaviour
         string transcript = GetMessagesString();
         string requestData = "{\"model\": \"" + modelName + "\", \"messages\":" + transcript + "}";
 
-        UnityWebRequest www = UnityWebRequest.Post(url, "");
+        UnityWebRequest www = UnityWebRequest.PostWwwForm(url, "");
         byte[] bodyRaw = Encoding.UTF8.GetBytes(requestData);
         www.uploadHandler = (UploadHandler)new UploadHandlerRaw(bodyRaw);
         www.downloadHandler = (DownloadHandler)new DownloadHandlerBuffer();
@@ -546,7 +590,7 @@ public class Controller : MonoBehaviour
         string requestData = "{\"model\": \"" + modelName + "\", \"messages\":" + transcript + "}";
         messagesForEvent.RemoveAt(messagesForEvent.Count - 1);
 
-        UnityWebRequest www = UnityWebRequest.Post(url, "");
+        UnityWebRequest www = UnityWebRequest.PostWwwForm(url, "");
         byte[] bodyRaw = Encoding.UTF8.GetBytes(requestData);
         www.uploadHandler = (UploadHandler)new UploadHandlerRaw(bodyRaw);
         www.downloadHandler = (DownloadHandler)new DownloadHandlerBuffer();
@@ -669,7 +713,7 @@ public class Controller : MonoBehaviour
         headers.Add("Content-Type", "application/json");
         string requestData = "{\"model\": \"" + modelName + "\", \"messages\": [{\"role\": \"user\", \"content\": \"" + prevMsg + "\"}]}";
         Debug.Log(requestData);
-        UnityWebRequest www = UnityWebRequest.Post(url, "");
+        UnityWebRequest www = UnityWebRequest.PostWwwForm(url, "");
         byte[] bodyRaw = Encoding.UTF8.GetBytes(requestData);
         www.uploadHandler = (UploadHandler)new UploadHandlerRaw(bodyRaw);
         www.downloadHandler = (DownloadHandler)new DownloadHandlerBuffer();

@@ -12,7 +12,7 @@ public class RecIndicator : MonoBehaviour
     void Start()
     {
         myRenderer = gameObject.GetComponent<Renderer>();
-        myRenderer.material.SetColor("_Color", Color.gray);
+        myRenderer.material.SetColor("_BaseColor", Color.gray);
     }
 
     // Update is called once per frame
@@ -22,16 +22,16 @@ public class RecIndicator : MonoBehaviour
         {
             if(elapasedTime < 0.75f)
             {
-                myRenderer.material.SetColor("_Color", Color.red);
+                myRenderer.material.SetColor("_BaseColor", Color.red);
             }
             else if(elapasedTime > 0.75f)
             {
-                myRenderer.material.SetColor("_Color", Color.gray);
+                myRenderer.material.SetColor("_BaseColor", Color.gray);
             }
             if(elapasedTime > 1.5f)
             {
                 elapasedTime = 0.0f;
-                myRenderer.material.SetColor("_Color", Color.red);
+                myRenderer.material.SetColor("_BaseColor", Color.red);
             }
 
             elapasedTime += Time.deltaTime;
@@ -47,7 +47,7 @@ public class RecIndicator : MonoBehaviour
     public void StopBlinking()
     {
         blink = false;
-        myRenderer.material.SetColor("_Color", Color.gray);
+        myRenderer.material.SetColor("_BaseColor", Color.gray);
         elapasedTime = 0.0f;
     }
 }
