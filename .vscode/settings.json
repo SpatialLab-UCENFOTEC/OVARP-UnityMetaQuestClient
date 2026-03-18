@@ -51,5 +51,5 @@
         "temp/": true,
         "Temp/": true
     },
-    "dotnet.defaultSolution": "OpenVirtualAgentFramework-Unity.sln"
+    "dotnet.defaultSolution": "OpenVirtualAgentFramework-Unity.slnx"
 }

@@ -3970,6 +3970,10 @@ PrefabInstance:
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: cb0837a418f5a43e5b430de87995d0b6, type: 2}
+    - target: {fileID: 4837205815229212721, guid: 8df43d76392eb4566b83a7987f888875, type: 3}
+      propertyPath: openAIApiKey
+      value: 
+      objectReference: {fileID: 0}
     - target: {fileID: 7974274212280106131, guid: 8df43d76392eb4566b83a7987f888875, type: 3}
       propertyPath: m_Name
       value: VirtualAgent
