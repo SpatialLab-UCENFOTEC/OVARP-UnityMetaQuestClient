@@ -1,7 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Networking;
 using UnityEngine.InputSystem;
 using UnityEngine.XR;
 using XRCommonUsages = UnityEngine.XR.CommonUsages;
@@ -17,24 +16,6 @@ using System.Runtime.InteropServices;
 [RequireComponent(typeof(AudioSource))]
 public class Controller : MonoBehaviour
 {
-
-    [System.Serializable]
-    public class Message
-    {
-        public string text;
-
-        
-        public Message(string text)
-        {
-            this.text = text;
-        }
-
-        public static Message CreateFromJSON(string jsonString)
-        {
-            return JsonUtility.FromJson<Message>(jsonString);
-        }
-    }
-
     // WebGL-only JS interop — no-ops on Editor/Standalone
 #if UNITY_WEBGL && !UNITY_EDITOR
     [DllImport("__Internal")]
@@ -55,57 +36,6 @@ public class Controller : MonoBehaviour
     private static void QuitGame() { Application.Quit(); }
 #endif
 
-    [System.Serializable]
-    public class ChatCompletion
-    {
-        public string id;
-        public string created;
-        public string model;
-        public Usage usage;
-        public Choice[] choices;
-    }
-
-    [System.Serializable]
-    public class Usage
-    {
-        public int prompt_tokens;
-        public int completion_tokens;
-        public int total_tokens;
-    }
-
-    [System.Serializable]
-    public class Choice
-    {
-        public ChatGPTMessage message;
-        public string finish_reason;
-        public int index;
-    }
-
-    [System.Serializable]
-    public class ChatGPTMessage
-    {
-        public string role;
-        public string content;
-    }
-
-
-    [System.Serializable]
-    public class Event
-    {
-
-        public Event(string evnt, string dt)
-        {
-            this.eventName = evnt;
-            this.date = dt;
-        }
-
-        public string eventName;
-        public string date;
-    }
-
-    // Set this in the Unity Inspector — never hardcode secrets in source
-    [SerializeField] private string openAIApiKey;
-
     public AudioSource audioSource;
     public AudioSource audioSource2;
     public AgentState CurrentState { get; private set; }
@@ -123,15 +53,11 @@ public class Controller : MonoBehaviour
         Speaking
     }
 
-
-    public GameObject gameObject;
-    public GameObject agent;  //Agent
-
+    public GameObject agent;
     public GameObject LipSync;
     public LipSync lipSync;
 
     private string outputFilePath;
-
 
     public Chat chat;
     public GameObject ChatObject;
@@ -141,23 +67,21 @@ public class Controller : MonoBehaviour
     public AnimController anim;
     public RecIndicator recIndicator;
 
-    private List<string> messages;
-    private List<string> messagesForEvent;
+    // OVAF / OpenAI backend (assigned in Inspector)
+    public OVAFClient ovafClient;
 
-    private string rememberToAnswerInShort = " ";
+    private Vector3 _agentInitialPosition;
+    private const float MoveStep = 1f;
 
-    private bool canAskForElse = false;
     private bool isAudioReady = false;
     private bool isListening = false;
     private bool hasMicPermission = false;
+    private bool _playbackStarted = false; // guards against exiting Speaking before Play() is called
 
-    // Start is called before the first frame update
     void Start()
     {
         StartCoroutine(RequestMicrophonePermission());
-        gameObject = GameObject.Find("Client");
-        // client = gameObject.GetComponent<UdpSocket>();
-        // audioSource = agent.gameObject.GetComponent<AudioSource>();
+
         LipSync = GameObject.Find("Frank");
         lipSync = LipSync.GetComponent<LipSync>();
 
@@ -171,71 +95,119 @@ public class Controller : MonoBehaviour
         anim = GameObject.Find("Frank").GetComponent<AnimController>();
         recIndicator = GameObject.Find("Sphere").GetComponent<RecIndicator>();
 
-        messages = new List<string>();
-        messagesForEvent = new List<string>();
-        string name = "Daniel";
-        // messages.Add("{\"role\": \"system\", \"content\": \"You are my best friend. Answer in 3 sentences or less and be friendly. Ask for more information if needed. You need to respond like a real person in a conversational tone. You are not to reveal you are not a real person. If asked for advice, always answer as if you were a person. Remember my name is Rodrigo.\"}");
-        messagesForEvent.Add("{\"role\": \"system\", \"content\": \"You are an assistant that is supposed to get events from text. I will give you a message and today's date and you should reply with event and date. So if the message is 'I have a flower contest on friday. Today:11/20/23, Tuesday' then you would return the following: 'Event: Flower event. Date: 11/24/24.' If there is no event to extract then return the string 'No event'\"}");
+        _agentInitialPosition = agent.transform.position;
 
-        // Guard: warn early if API key is missing so the error is visible in logs/ScreenLogger
-        if (string.IsNullOrEmpty(openAIApiKey))
-            Debug.LogError("[Controller] openAIApiKey is not set. Set it in the Inspector on the Controller GameObject.");
-
-        // Default Nova persona — SetName() overrides this when called from UI/WebGL
-        if (messages.Count == 0)
+        if (ovafClient == null)
+            Debug.LogError("[Controller] ovafClient is not assigned in the Inspector.");
+        else
         {
-            string today = DateTime.Now.ToString("MM/dd/yyyy");
-            messages.Add("{\"role\": \"system\", \"content\": \"DateFormat: mm/dd/yyyy. Today: " + today + ".\"}");
-            messages.Add("{\"role\": \"system\", \"content\": \"You are a trusted companion named Nova. Answer in 3 sentences or less. Be friendly, curious, and conversational. Never reveal you are not human.\"}");
+            ovafClient.OnTextReply       += OnAgentTextReply;
+            ovafClient.OnTtsComplete     += OnAgentTtsReady;
+            ovafClient.OnMovementCommand += OnAgentMovement;
+            ovafClient.OnAnimationCommand += OnAgentAnimation;
+            ovafClient.OnAvatarCommand   += OnAgentAvatarChange;
         }
     }
 
-    // Update is called once per frame
+    private void OnDestroy()
+    {
+        if (ovafClient != null)
+        {
+            ovafClient.OnTextReply        -= OnAgentTextReply;
+            ovafClient.OnTtsComplete      -= OnAgentTtsReady;
+            ovafClient.OnMovementCommand  -= OnAgentMovement;
+            ovafClient.OnAnimationCommand -= OnAgentAnimation;
+            ovafClient.OnAvatarCommand    -= OnAgentAvatarChange;
+        }
+    }
+
+    // ── OVAFClient event handlers ─────────────────────────────────────────────
+
+    private void OnAgentTextReply(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        anim.StopThinking();
+        ReceiveMessage(text);
+    }
+
+    private void OnAgentTtsReady(AudioClip clip)
+    {
+        Debug.Log($"[Controller] OnAgentTtsReady — clip={clip?.length:F2}s state={CurrentState}");
+        audioSource.clip = clip;
+        lipSync.audioSource.clip = clip;
+        isAudioReady = true;
+    }
+
+    private void OnAgentMovement(string direction)
+    {
+        if (direction == "reset_position")
+        {
+            agent.transform.position = _agentInitialPosition;
+            return;
+        }
+
+        // World-space movement — move_closer = -Z (toward user), move_farther = +Z
+        Vector3 delta = direction switch
+        {
+            "move_closer"  => Vector3.back,
+            "move_farther" => Vector3.forward,
+            "move_left"    => Vector3.left,
+            "move_right"   => Vector3.right,
+            _              => Vector3.zero
+        };
+
+        agent.transform.position += delta * MoveStep;
+    }
+
+    private void OnAgentAnimation(string animName)
+    {
+        anim.PlayAnimation(animName);
+    }
+
+    private void OnAgentAvatarChange(string avatarName)
+    {
+        // TODO: implement avatar prefab swap
+        Debug.Log($"[Controller] Avatar change requested: '{avatarName}' — not yet implemented.");
+    }
+
+    // ── Update / state machine ────────────────────────────────────────────────
+
     void Update()
     {
         FixAudioClicks();
 
         if (CurrentState == AgentState.Idle)
         {
-            // Process next utterance in the queue
             if (!paused && utteranceQueue.Count > 0)
             {
                 CurrentState = AgentState.Waiting;
                 CurrentUtterance = utteranceQueue.Dequeue();
                 CurrentIntent = intentQueue.Dequeue();
-                StartCoroutine(SynthesizeSpeech(CurrentUtterance, "tts-1", "shimmer", openAIApiKey));
             }
         }
         else if (CurrentState == AgentState.Waiting)
         {
-            // Wait for TTS to finish getting audio
             if (isAudioReady)
             {
+                Debug.Log($"[Controller] Waiting→Speaking clip={audioSource.clip?.length:F2}s");
                 CurrentState = AgentState.Speaking;
-                // audioSource.clip = textToSpeech.SpeechAudio;
-                // audioSource.volume = 0;
-                // lipSync.AnalyzeAudioClip(audioSource.clip);
+                _playbackStarted = false;
                 StartCoroutine(lipSync.AnalyzeAudioClip(audioSource.clip));
-                // audioSource.Play();
             }
-             
         }
         else if (CurrentState == AgentState.Speaking)
         {
-            // Wait for speech to finish playing
-            if (!audioSource.isPlaying)
+            if (audioSource.isPlaying) _playbackStarted = true;
+            if (_playbackStarted && !audioSource.isPlaying)
             {
                 CurrentState = AgentState.Idle;
                 isAudioReady = false;
-                // CurrentUtterance = null;
+                _playbackStarted = false;
                 CurrentIntent = null;
-                
             }
-            
-                
         }
 
-        if(responses.Count != 0)
+        if (responses.Count != 0)
         {
             chat.killTempAgent();
             chat.sendAgentMessage(responses.Dequeue());
@@ -243,6 +215,8 @@ public class Controller : MonoBehaviour
 
         CheckInputTriggers();
     }
+
+    // ── Input ─────────────────────────────────────────────────────────────────
 
     private bool rightTriggerWasPressed = false;
 
@@ -273,10 +247,11 @@ public class Controller : MonoBehaviour
         }
     }
 
+    // ── Recording ─────────────────────────────────────────────────────────────
 
     public void ProcessInput()
     {
-        if(!isListening)
+        if (!isListening)
         {
             recIndicator.StartBlinking();
             StartRecording();
@@ -292,35 +267,6 @@ public class Controller : MonoBehaviour
         }
     }
 
-    public void SetName(string myString)
-    {
-        DateTime today = DateTime.Now;
-        string formattedDate = today.ToString("MM/dd/yyyy");
-        string[] elements = myString.Split('|');
-        Print(elements[1]);
-        messages.Add("{\"role\": \"system\", \"content\": \"DateFormat: mm/dd/yyyy, Events: Today:" + formattedDate +", " + elements[1] +"\"}");
-        messages.Add("{\"role\": \"system\", \"content\": \"You are a trusted companion and your name is Nova. Answer in 3 sentences or less if possible. Maintain a conversational tone and engage in meaningful dialogue with the user. Show curiosity about their life by asking follow-up questions on their shared experiences or topics discussed. Utilize past conversations to reinforce your personal connection with them. Your purpose is to provide a friendly, nurturing presence and when necessary, provide advice as any good friend would. Under NO circumstances should you reveal that you're not a human, pretend you are human always. Remember, their name is " + elements[0] + ". You're not just a system but a friend. Be supportive, attentive and conversational, always treating every user interaction as a valuable part of your ongoing relationship.\"}");
-    }
-
-    public void ReceiveMessage(string text, bool askForAnythingElse = false)
-    {
-        anim.StopThinking();
-        utteranceQueue.Enqueue(text);
-        intentQueue.Enqueue(null);
-        responses.Enqueue(text);
-        Hello(text);
-        // if(askForAnythingElse && canAskForElse)
-        // {
-        //     SpeakIntent("Is there anything else I can do for you?");
-        //     responses.Enqueue("Is there anything else I can do for you?");
-        // }
-        // if(!canAskForElse)
-        // {
-        //     canAskForElse = true;
-        // }
-        
-    }
-
     IEnumerator RequestMicrophonePermission()
     {
         // Android/Quest require explicit runtime permission for microphone
@@ -330,7 +276,8 @@ public class Controller : MonoBehaviour
             Debug.LogError("Microphone permission denied — voice input will not work.");
     }
 
-    public void StartRecording() {
+    public void StartRecording()
+    {
         if (!hasMicPermission)
         {
             Debug.LogWarning("StartRecording: microphone permission not granted.");
@@ -341,7 +288,8 @@ public class Controller : MonoBehaviour
         audioSource2.clip = Microphone.Start(null, true, 10, AudioSettings.outputSampleRate);
     }
 
-    public void StopRecording() {
+    public void StopRecording()
+    {
         // Capture actual recorded length before stopping to avoid trailing silence
         int recordedSamples = Microphone.GetPosition(null);
         Microphone.End(null);
@@ -360,30 +308,25 @@ public class Controller : MonoBehaviour
         trimmed.SetData(data, 0);
 
         SavWav.Save("mic.wav", trimmed);
-        StartCoroutine(TranscribeAudio(outputFilePath, "whisper-1", openAIApiKey));
+        ovafClient.SendAudio(File.ReadAllBytes(outputFilePath));
     }
 
-    public void ReceiveString(string msg)
+    // ── Speech queue ──────────────────────────────────────────────────────────
+
+    public void ReceiveMessage(string text, bool immediate = false)
     {
-        chat.killTempUser();
-        chat.sendUserMessage(msg);
-        DateTime today = DateTime.Now;
-        string formattedDateAndDay = today.ToString("MM/dd/yyyy, dddd");
-        messages.Add("{\"role\": \"user\", \"content\": \"" + msg + "\"}");
-        messagesForEvent.Add("{\"role\": \"user\", \"content\": \"Today:" + formattedDateAndDay + ", Text: " + msg + "\"}");
-        StartCoroutine(GetEventFromAPI("gpt-3.5-turbo", openAIApiKey, msg));
-        StartCoroutine(GetOpenAIChatResponse("gpt-4", openAIApiKey, msg));
-        // client.SendData(msg.text);
-        chat.SendTempAgent();
+        utteranceQueue.Enqueue(text);
+        intentQueue.Enqueue(null);
+        responses.Enqueue(text);
+        Hello(text);
     }
 
-
-    public void SpeakIntent(string message, bool immediate=false)
+    public void SpeakIntent(string message, bool immediate = false)
     {
         Speak(message, immediate);
     }
 
-    public void Speak(string utterance, bool immediate=false, string[] intent=null)
+    public void Speak(string utterance, bool immediate = false, string[] intent = null)
     {
         if (immediate)
         {
@@ -395,12 +338,7 @@ public class Controller : MonoBehaviour
         intentQueue.Enqueue(intent);
     }
 
-
-    // private void RequestAudio(string utterance)
-    // {
-    //     CurrentState = AgentState.Waiting;
-    //     textToSpeech.RequestSpeechAudio(utterance);
-    // }
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void FixAudioClicks()
     {
@@ -421,329 +359,14 @@ public class Controller : MonoBehaviour
         }
     }
 
-    IEnumerator TranscribeAudio(string filePath, string modelName, string apiKey) 
+    public void SetName(string myString)
     {
-        List<IMultipartFormSection> formData = new List<IMultipartFormSection>();
-        formData.Add(new MultipartFormDataSection("model", modelName));
-        formData.Add(new MultipartFormFileSection("file", File.ReadAllBytes(filePath), "mic.wav", "audio/wav"));
-
-        UnityWebRequest www = UnityWebRequest.Post("https://api.openai.com/v1/audio/transcriptions", formData);
-        www.SetRequestHeader("Authorization", "Bearer " + apiKey);
-
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success) {
-            Debug.LogError("Error: " + www.error);
-        } else {
-            Debug.Log("Response: " + www.downloadHandler.text);
-            Message msg = Message.CreateFromJSON(www.downloadHandler.text);
-            www.disposeUploadHandlerOnDispose = true;
-            www.disposeDownloadHandlerOnDispose = true;
-            www.Dispose();
-            chat.killTempUser();
-            chat.sendUserMessage(msg.text);
-            messages.Add("{\"role\": \"user\", \"content\": \"" + msg.text + rememberToAnswerInShort + "\"}");
-            DateTime today = DateTime.Now;
-            string formattedDateAndDay = today.ToString("MM/dd/yy, dddd");
-            messagesForEvent.Add("{\"role\": \"user\", \"content\": \"Today:" + formattedDateAndDay + ", Text: " + msg.text + "\"}");
-            StartCoroutine(GetEventFromAPI("gpt-3.5-turbo", openAIApiKey, msg.text));
-            StartCoroutine(GetOpenAIChatResponse("gpt-4", openAIApiKey, msg.text));
-            // client.SendData(msg.text);
-            chat.SendTempAgent();
-        }
-    }
-
-    private string GetMessagesString()
-    {
-        string temp = "[";
-        foreach (var x in messages)
-        {
-            temp += x;
-            temp += ",";
-        }
-        return temp.Remove(temp.Length - 1) + "]";
-    }
-
-    private string GetEventsString()
-    {
-        string temp = "[";
-        foreach (var x in messagesForEvent)
-        {
-            temp += x;
-            temp += ",";
-        }
-        return temp.Remove(temp.Length - 1) + "]";
-    }
-
-    // IEnumerator GetOpenAIChatResponse(string modelName, string apiKey, string prevMsg) 
-    // {
-    //     string url = "https://api.openai.com/v1/chat/completions";
-
-    //     Dictionary<string, string> headers = new Dictionary<string, string>();
-    //     headers.Add("Authorization", "Bearer " + apiKey);
-    //     headers.Add("Content-Type", "application/json");
-
-    //     // string requestData = "{\"model\": \"" + modelName + "\", \"messages\": [{\"role\": \"user\", \"content\": \"" + userInput + "\"}]}";
-    //     string transcript = GetMessagesString();
-    //     string requestData = "{\"model\": \"" + modelName + "\", \"messages\":" + transcript + "}";
-
-    //     UnityWebRequest www = UnityWebRequest.Post(url, "");
-    //     byte[] bodyRaw = Encoding.UTF8.GetBytes(requestData);
-    //     www.uploadHandler = (UploadHandler)new UploadHandlerRaw(bodyRaw);
-    //     www.downloadHandler = (DownloadHandler)new DownloadHandlerBuffer();
-
-    //     foreach (KeyValuePair<string, string> header in headers) {
-    //         www.SetRequestHeader(header.Key, header.Value);
-    //     }
-
-    //     yield return www.SendWebRequest();
-
-    //     if (www.result != UnityWebRequest.Result.Success) {
-    //         Debug.LogError("Error: " + www.error);
-    //     } else {
-    //         ChatCompletion chatCompletion = JsonUtility.FromJson<ChatCompletion>(www.downloadHandler.text);
-    //         string messageContent = chatCompletion.choices[0].message.content;
-    //         messages.Add("{\"role\": \"assistant\", \"content\": \"" + messageContent + "\"}");
-    //         if(prevMsg.Length < 25)
-    //         {
-    //             ReceiveMessage(messageContent,true);
-    //         }
-    //         else
-    //         {
-    //             ReceiveMessage(messageContent);
-    //         }
-    //         // Message msg = Message.CreateFromJSON(www.downloadHandler.text);
-    //         // chat.sendUserMessage(msg.text);
-    //         // client.SendData(msg.text);
-    //     }
-
-    //     www.disposeDownloadHandlerOnDispose = true;
-    //     www.disposeUploadHandlerOnDispose = true;
-    //     www.Dispose();
-    // }
-
-    IEnumerator GetOpenAIChatResponse(string modelName, string apiKey, string prevMsg) 
-    {
-        string url = "https://api.openai.com/v1/chat/completions";
-
-        Dictionary<string, string> headers = new Dictionary<string, string>();
-        headers.Add("Authorization", "Bearer " + apiKey);
-        headers.Add("Content-Type", "application/json");
-
-        string transcript = GetMessagesString();
-        string requestData = "{\"model\": \"" + modelName + "\", \"messages\":" + transcript + "}";
-
-        UnityWebRequest www = UnityWebRequest.PostWwwForm(url, "");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(requestData);
-        www.uploadHandler = (UploadHandler)new UploadHandlerRaw(bodyRaw);
-        www.downloadHandler = (DownloadHandler)new DownloadHandlerBuffer();
-
-        foreach (KeyValuePair<string, string> header in headers) {
-            www.SetRequestHeader(header.Key, header.Value);
-        }
-
-        int retryLimit = 2;
-        int retryCount = 0;
-
-        while (retryCount < retryLimit) {
-            yield return www.SendWebRequest();
-
-            if (www.result != UnityWebRequest.Result.Success) {
-                Debug.LogError("Error: " + www.error);
-                retryCount++;
-                Debug.Log("Retry attempt: " + retryCount);
-            } else {
-                ChatCompletion chatCompletion = JsonUtility.FromJson<ChatCompletion>(www.downloadHandler.text);
-                string messageContent = chatCompletion.choices[0].message.content;
-                messages.Add("{\"role\": \"assistant\", \"content\": \"" + messageContent + "\"}");
-                if(prevMsg.Length < 25)
-                {
-                    ReceiveMessage(messageContent,true);
-                }
-                else
-                {
-                    ReceiveMessage(messageContent);
-                }
-                yield break; // Successful response, exit the loop
-            }
-
-            www.disposeDownloadHandlerOnDispose = true;
-            www.disposeUploadHandlerOnDispose = true;
-            www.Dispose();
-        }
-
-        // Retry limit reached, handle failure
-        Debug.LogError("Failed to get response after multiple attempts.");
-        // You can handle failure here, such as showing an error message to the user
-    }
-
-    IEnumerator GetEventFromAPI(string modelName, string apiKey, string prevMsg) 
-    {
-        string url = "https://api.openai.com/v1/chat/completions";
-
-        Dictionary<string, string> headers = new Dictionary<string, string>();
-        headers.Add("Authorization", "Bearer " + apiKey);
-        headers.Add("Content-Type", "application/json");
-
-        // string requestData = "{\"model\": \"" + modelName + "\", \"messages\": [{\"role\": \"user\", \"content\": \"" + userInput + "\"}]}";
-        string transcript = GetEventsString();
-        string requestData = "{\"model\": \"" + modelName + "\", \"messages\":" + transcript + "}";
-        messagesForEvent.RemoveAt(messagesForEvent.Count - 1);
-
-        UnityWebRequest www = UnityWebRequest.PostWwwForm(url, "");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(requestData);
-        www.uploadHandler = (UploadHandler)new UploadHandlerRaw(bodyRaw);
-        www.downloadHandler = (DownloadHandler)new DownloadHandlerBuffer();
-
-        foreach (KeyValuePair<string, string> header in headers) {
-            www.SetRequestHeader(header.Key, header.Value);
-        }
-
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success) {
-            Debug.LogError("Error: " + www.error);
-        } else {
-            ChatCompletion chatCompletion = JsonUtility.FromJson<ChatCompletion>(www.downloadHandler.text);
-            string messageContent = chatCompletion.choices[0].message.content;
-            if(messageContent != "No event" && !messageContent.Contains("No event"))
-            {
-                StoreEvents(messageContent);
-            }
-        }
-
-        www.disposeDownloadHandlerOnDispose = true;
-        www.disposeUploadHandlerOnDispose = true;
-        www.Dispose();
-    }
-
-    // IEnumerator SynthesizeSpeech(string inputText, string modelName, string voiceName, string apiKey)
-    // {
-    //     string url = "https://api.openai.com/v1/audio/speech";
-
-    //     Dictionary<string, string> headers = new Dictionary<string, string>();
-    //     headers.Add("Authorization", "Bearer " + apiKey);
-    //     headers.Add("Content-Type", "application/json");
-
-    //     string requestData = "{\"model\": \"" + modelName + "\", \"input\":\"" + inputText + "\", \"voice\":\"" + voiceName + "\"}";
-
-    //     using (UnityWebRequest www = UnityWebRequestMultimedia.GetAudioClip(url, AudioType.MPEG))
-    //     {
-    //         www.method = "POST";
-    //         byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(requestData);
-    //         www.uploadHandler = new UploadHandlerRaw(bodyRaw);
-
-    //         foreach (KeyValuePair<string, string> header in headers)
-    //         {
-    //             www.SetRequestHeader(header.Key, header.Value);
-    //         }
-
-    //         yield return www.SendWebRequest();
-
-    //         if (www.result != UnityWebRequest.Result.Success)
-    //         {
-    //             Debug.LogError("Error: " + www.error);
-    //         }
-    //         else
-    //         {
-    //             AudioClip clip = DownloadHandlerAudioClip.GetContent(www);
-    //             audioSource.clip = clip;
-    //             isAudioReady = true;
-    //             // audioSource.Play();
-    //         }
-    //     }
-    // }
-
-    IEnumerator SynthesizeSpeech(string inputText, string modelName, string voiceName, string apiKey)
-    {
-        string url = "https://api.openai.com/v1/audio/speech";
-
-        Dictionary<string, string> headers = new Dictionary<string, string>();
-        headers.Add("Authorization", "Bearer " + apiKey);
-        headers.Add("Content-Type", "application/json");
-
-        string requestData = "{\"model\": \"" + modelName + "\", \"input\":\"" + inputText + "\", \"voice\":\"" + voiceName + "\"}";
-
-        int retryLimit = 2;
-        int retryCount = 0;
-
-        while (retryCount < retryLimit) {
-            using (UnityWebRequest www = UnityWebRequestMultimedia.GetAudioClip(url, AudioType.MPEG))
-            {
-                www.method = "POST";
-                byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(requestData);
-                www.uploadHandler = new UploadHandlerRaw(bodyRaw);
-
-                foreach (KeyValuePair<string, string> header in headers)
-                {
-                    www.SetRequestHeader(header.Key, header.Value);
-                }
-
-                yield return www.SendWebRequest();
-
-                if (www.result != UnityWebRequest.Result.Success)
-                {
-                    Debug.LogError("Error: " + www.error);
-                    retryCount++;
-                    Debug.Log("Retry attempt: " + retryCount);
-                }
-                else
-                {
-                    AudioClip clip = DownloadHandlerAudioClip.GetContent(www);
-                    audioSource.clip = clip;
-                    isAudioReady = true;
-                    yield break; // Successful response, exit the loop
-                }
-            }
-        }
-
-        // Retry limit reached, handle failure
-        Debug.LogError("Failed to synthesize speech after multiple attempts.");
-        // You can handle failure here, such as showing an error message to the user
-    }
-
-
-
-    IEnumerator GetSummary(string modelName, string apiKey, string prevMsg) 
-    {
-        string url = "https://api.openai.com/v1/chat/completions";
-
-        Dictionary<string, string> headers = new Dictionary<string, string>();
-        headers.Add("Authorization", "Bearer " + apiKey);
-        headers.Add("Content-Type", "application/json");
-        string requestData = "{\"model\": \"" + modelName + "\", \"messages\": [{\"role\": \"user\", \"content\": \"" + prevMsg + "\"}]}";
-        Debug.Log(requestData);
-        UnityWebRequest www = UnityWebRequest.PostWwwForm(url, "");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(requestData);
-        www.uploadHandler = (UploadHandler)new UploadHandlerRaw(bodyRaw);
-        www.downloadHandler = (DownloadHandler)new DownloadHandlerBuffer();
-
-        foreach (KeyValuePair<string, string> header in headers) {
-            www.SetRequestHeader(header.Key, header.Value);
-        }
-
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success) {
-            Debug.LogError("Error: " + www.error);
-        } else {
-            ChatCompletion chatCompletion = JsonUtility.FromJson<ChatCompletion>(www.downloadHandler.text);
-            string messageContent = chatCompletion.choices[0].message.content;
-            Debug.Log(messageContent);
-            // Message msg = Message.CreateFromJSON(www.downloadHandler.text);
-            // chat.sendUserMessage(msg.text);
-            // client.SendData(msg.text);
-        }
-
-        www.disposeDownloadHandlerOnDispose = true;
-        www.disposeUploadHandlerOnDispose = true;
-        www.Dispose();
+        string[] elements = myString.Split('|');
+        Print(elements[1]);
     }
 
     public void Quit()
     {
-        // string transcript = GetMessagesString();
-        // StartCoroutine(GetSummary("gpt-3.5-turbo","APIKEY HERE","Please summarize this content as short and concise as possible without losing context:" + transcript));
         QuitGame();
     }
 }

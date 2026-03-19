@@ -38,4 +38,10 @@ public class AnimController : MonoBehaviour
     {
         notThink = true;
     }
+
+    // Trigger an animation by name. Animator must have a matching trigger parameter wired up.
+    public void PlayAnimation(string triggerName)
+    {
+        anim.SetTrigger(triggerName);
+    }
 }
