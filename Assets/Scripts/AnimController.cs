@@ -1,47 +1,48 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using System;
+
 public class AnimController : MonoBehaviour
 {
-    Animator anim;
-    public bool think = false;
-    public bool notThink = false;
-    public int t = 1, s = 2;
+    Animator _anim;
+    GesturePlayer _gestures;
+
     void Start()
     {
-        anim = gameObject.GetComponent<Animator>();
-    }
-    void Update()
-    {
-        if (think)
-        {
-
-            anim.SetTrigger("Think");
-            think = false;
-
-        }
-        else if(notThink)
-        {
-            anim.SetTrigger("StopThinking");
-            notThink = false;
-        }
+        _anim     = GetComponent<Animator>();
+        _gestures = GetComponent<GesturePlayer>();
     }
 
-    public void StartThinking()
-    {
-        think = true;
-    }
-
+    public void StartThinking() => _anim.SetTrigger("Think");
 
     public void StopThinking()
     {
-        notThink = true;
+        _anim.SetTrigger("StopThinking");
+        // Force-exit any looping thinking state back to Idle
+        _anim.Play("Idle", 0);
     }
 
-    // Trigger an animation by name. Animator must have a matching trigger parameter wired up.
-    public void PlayAnimation(string triggerName)
+    // Routes server action commands:
+    //   "thinking" → Animator Think trigger
+    //   "idle"     → stop thinking + stop gesture
+    //   all others → GesturePlayer procedural gestures
+    public void PlayAnimation(string command)
     {
-        anim.SetTrigger(triggerName);
+        switch (command)
+        {
+            case "thinking":
+                StartThinking();
+                break;
+
+            case "idle":
+                StopThinking();
+                _gestures?.StopGesture();
+                break;
+
+
+            default:
+                if (_gestures != null && _gestures.TryPlay(command)) break;
+                // Fallback: treat unknown commands as Animator trigger names
+                _anim.SetTrigger(command);
+                break;
+        }
     }
 }

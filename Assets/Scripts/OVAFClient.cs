@@ -30,10 +30,13 @@ public class OVAFClient : MonoBehaviour
 
     // Fired on main thread
     public event Action<string>    OnTextReply;
+    public event Action<string>    OnUserTranscript;
     public event Action<AudioClip> OnTtsComplete;
     public event Action<string>    OnMovementCommand;   // move_closer, move_farther, move_left, move_right, reset_position
     public event Action<string>    OnAnimationCommand;  // clap, bow, thumbs_up, thinking, shrug, dance, etc.
     public event Action<string>    OnAvatarCommand;     // default, male_casual, female_formal, robot
+    public event Action<string>    OnEmotionCommand;    // neutral, happy, sad, angry, surprised
+    public event Action<string>    OnLooksCommand;      // user, away, agent_beta
 
     // ── private state ──────────────────────────────────────────────────────────
     private ClientWebSocket _ws;
@@ -238,6 +241,12 @@ public class OVAFClient : MonoBehaviour
                 else
                     Debug.LogWarning("[OVAFClient] llm_reply received but text was empty.");
             }
+            else if (topic == "message" && command == "user_transcript")
+            {
+                string text = ExtractField(json, "text");
+                if (!string.IsNullOrEmpty(text))
+                    _mainThreadQueue.Enqueue(() => OnUserTranscript?.Invoke(text));
+            }
             else if (topic == "audio" && command == "tts_chunk")
             {
                 string chunk = ExtractField(json, "audio_base64");
@@ -285,6 +294,8 @@ public class OVAFClient : MonoBehaviour
                 string movement  = ExtractField(json, "movement");
                 string animation = ExtractField(json, "actions");
                 string avatar    = ExtractField(json, "avatar");
+                string emotion   = ExtractField(json, "emotions");
+                string looks     = ExtractField(json, "looks");
 
                 if (!string.IsNullOrEmpty(movement))
                     _mainThreadQueue.Enqueue(() => OnMovementCommand?.Invoke(movement));
@@ -292,6 +303,10 @@ public class OVAFClient : MonoBehaviour
                     _mainThreadQueue.Enqueue(() => OnAnimationCommand?.Invoke(animation));
                 else if (!string.IsNullOrEmpty(avatar))
                     _mainThreadQueue.Enqueue(() => OnAvatarCommand?.Invoke(avatar));
+                else if (!string.IsNullOrEmpty(emotion))
+                    _mainThreadQueue.Enqueue(() => OnEmotionCommand?.Invoke(emotion));
+                else if (!string.IsNullOrEmpty(looks))
+                    _mainThreadQueue.Enqueue(() => OnLooksCommand?.Invoke(looks));
                 else
                     Debug.LogWarning($"[OVAFClient] execute_state received but no recognized subcommand key.");
             }

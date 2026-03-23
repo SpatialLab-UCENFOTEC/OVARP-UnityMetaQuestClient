@@ -66,12 +66,14 @@ public class Controller : MonoBehaviour
 
     public AnimController anim;
     public RecIndicator recIndicator;
+    public EmotionController emotionController;
+    public HeadLookAt headLookAt;
 
     // OVAF / OpenAI backend (assigned in Inspector)
     public OVAFClient ovafClient;
 
     private Vector3 _agentInitialPosition;
-    private const float MoveStep = 1f;
+    private const float MoveStep = 0.1f;
 
     private bool isAudioReady = false;
     private bool isListening = false;
@@ -92,8 +94,10 @@ public class Controller : MonoBehaviour
         chat = ChatObject.GetComponent<Chat>();
         responses = new Queue<string>();
 
-        anim = GameObject.Find("Frank").GetComponent<AnimController>();
-        recIndicator = GameObject.Find("Sphere").GetComponent<RecIndicator>();
+        anim             = GameObject.Find("Frank").GetComponent<AnimController>();
+        emotionController = GameObject.Find("Frank").GetComponent<EmotionController>();
+        headLookAt       = GameObject.Find("Frank").GetComponent<HeadLookAt>();
+        recIndicator     = GameObject.Find("Sphere").GetComponent<RecIndicator>();
 
         _agentInitialPosition = agent.transform.position;
 
@@ -102,10 +106,13 @@ public class Controller : MonoBehaviour
         else
         {
             ovafClient.OnTextReply       += OnAgentTextReply;
+            ovafClient.OnUserTranscript  += OnUserTranscriptReceived;
             ovafClient.OnTtsComplete     += OnAgentTtsReady;
-            ovafClient.OnMovementCommand += OnAgentMovement;
+            ovafClient.OnMovementCommand  += OnAgentMovement;
             ovafClient.OnAnimationCommand += OnAgentAnimation;
-            ovafClient.OnAvatarCommand   += OnAgentAvatarChange;
+            ovafClient.OnAvatarCommand    += OnAgentAvatarChange;
+            ovafClient.OnEmotionCommand   += OnAgentEmotion;
+            ovafClient.OnLooksCommand     += OnAgentLooks;
         }
     }
 
@@ -114,10 +121,13 @@ public class Controller : MonoBehaviour
         if (ovafClient != null)
         {
             ovafClient.OnTextReply        -= OnAgentTextReply;
+            ovafClient.OnUserTranscript   -= OnUserTranscriptReceived;
             ovafClient.OnTtsComplete      -= OnAgentTtsReady;
             ovafClient.OnMovementCommand  -= OnAgentMovement;
             ovafClient.OnAnimationCommand -= OnAgentAnimation;
             ovafClient.OnAvatarCommand    -= OnAgentAvatarChange;
+            ovafClient.OnEmotionCommand   -= OnAgentEmotion;
+            ovafClient.OnLooksCommand     -= OnAgentLooks;
         }
     }
 
@@ -128,6 +138,12 @@ public class Controller : MonoBehaviour
         if (string.IsNullOrEmpty(text)) return;
         anim.StopThinking();
         ReceiveMessage(text);
+    }
+
+    private void OnUserTranscriptReceived(string text)
+    {
+        chat.killTempUser();
+        chat.sendUserMessage(text);
     }
 
     private void OnAgentTtsReady(AudioClip clip)
@@ -146,13 +162,21 @@ public class Controller : MonoBehaviour
             return;
         }
 
-        // World-space movement — move_closer = -Z (toward user), move_farther = +Z
+        // Movement relative to the user (camera) horizontal orientation
+        Transform cam = Camera.main != null ? Camera.main.transform : null;
+        Vector3 forward = cam != null
+            ? Vector3.ProjectOnPlane(cam.forward, Vector3.up).normalized
+            : Vector3.forward;
+        Vector3 right = cam != null
+            ? Vector3.ProjectOnPlane(cam.right, Vector3.up).normalized
+            : Vector3.right;
+
         Vector3 delta = direction switch
         {
-            "move_closer"  => Vector3.back,
-            "move_farther" => Vector3.forward,
-            "move_left"    => Vector3.left,
-            "move_right"   => Vector3.right,
+            "move_closer"  => -forward,
+            "move_farther" => forward,
+            "move_left"    => -right,
+            "move_right"   => right,
             _              => Vector3.zero
         };
 
@@ -162,6 +186,16 @@ public class Controller : MonoBehaviour
     private void OnAgentAnimation(string animName)
     {
         anim.PlayAnimation(animName);
+    }
+
+    private void OnAgentEmotion(string emotion)
+    {
+        emotionController?.SetEmotion(emotion);
+    }
+
+    private void OnAgentLooks(string lookTarget)
+    {
+        headLookAt?.SetLookTarget(lookTarget);
     }
 
     private void OnAgentAvatarChange(string avatarName)

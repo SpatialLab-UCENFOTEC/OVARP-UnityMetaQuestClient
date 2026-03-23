@@ -410,6 +410,8 @@ MonoBehaviour:
   ChatObject: {fileID: 0}
   anim: {fileID: 0}
   recIndicator: {fileID: 2282022764376776438}
+  emotionController: {fileID: 0}
+  headLookAt: {fileID: 0}
   ovafClient: {fileID: 3331360973602959169}
 --- !u!114 &3331360973602959169
 MonoBehaviour:
@@ -424,7 +426,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OVAFClient
   editorServerUrl: ws://localhost:8000
-  questServerUrl: ws://201.237.142.241:8000
+  questServerUrl: ws://192.168.100.38:8000
   clientId: quest_vr_01
   sender: quest_vr_01
   targetAgent: agent_alpha
@@ -781,6 +783,15 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 3abd11ed4de6ff746aacd60467626bb6, type: 3}
       insertIndex: -1
       addedObject: {fileID: 5486606950334390610}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 3abd11ed4de6ff746aacd60467626bb6, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 740904474094916078}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 3abd11ed4de6ff746aacd60467626bb6, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 4845569131865295904}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 3abd11ed4de6ff746aacd60467626bb6, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2029975322437888518}
   m_SourcePrefab: {fileID: 100100000, guid: 3abd11ed4de6ff746aacd60467626bb6, type: 3}
 --- !u!137 &3093729191267273205 stripped
 SkinnedMeshRenderer:
@@ -946,10 +957,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 887404382a4ea9048925904cfa677d97, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  think: 0
-  notThink: 0
-  t: 1
-  s: 2
 --- !u!114 &5486606950334390610
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -973,3 +980,78 @@ MonoBehaviour:
   curBlinkBlendshapeVal: 0
   curBlinkTime: 0
   nextBlinkTime: 0
+--- !u!114 &740904474094916078
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7940291364604483097}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 955289b02f13e40c7b88fcd974197065, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HeadLookAt
+  headBoneName: CC_Base_Head
+  target: {fileID: 0}
+  weight: 0.6
+  rotationOffset: {x: 0, y: 0, z: 0}
+--- !u!114 &4845569131865295904
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7940291364604483097}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 288a8156ddd8b410ea1a39d0c6491220, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GesturePlayer
+  pointLClavicle: {x: 0, y: 45, z: 0}
+  pointLUpperarm: {x: 0, y: 0, z: -45}
+  pointRClavicle: {x: 0, y: -45, z: 0}
+  pointRUpperarm: {x: 0, y: 0, z: 45}
+  waveForearmBase: {x: 90, y: 90, z: 90}
+  waveHandBase: {x: 0, y: 45, z: 45}
+  waveAxis: 0
+  waveMin: -30
+  waveMax: 30
+  shrugLClavicle: {x: 10, y: 10, z: -10}
+  shrugRClavicle: {x: 10, y: -10, z: 10}
+--- !u!114 &2029975322437888518
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7940291364604483097}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 035fd7d8eff9346a5aab67a8ab75f1d8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EmotionController
+  faceRenderer: {fileID: 3093729191267273205}
+  transitionDuration: 0.4
+  intensity: 100
+  logBlendshapeNames: 0
+  happyShapes:
+  - Morpher_CC_Base_Body.Mouth_Smile_L
+  - Morpher_CC_Base_Body.Mouth_Smile_R
+  - Morpher_CC_Base_Body.Cheek_Raise_L
+  - Morpher_CC_Base_Body.Cheek_Raise_R
+  sadShapes:
+  - Morpher_CC_Base_Body.Brow_Drop_L
+  - Morpher_CC_Base_Body.Brow_Drop_R
+  - Morpher_CC_Base_Body.Mouth_Frown
+  angryShapes:
+  - Morpher_CC_Base_Body.Brow_Drop_L
+  - Morpher_CC_Base_Body.Brow_Drop_R
+  - Morpher_CC_Base_Body.Brow_Compress_L
+  - Morpher_CC_Base_Body.Brow_Compress_R
+  surprisedShapes:
+  - Morpher_CC_Base_Body.Eye_Wide_L
+  - Morpher_CC_Base_Body.Eye_Wide_R
+  - Morpher_CC_Base_Body.Brow_Raise_Inner_L
+  - Morpher_CC_Base_Body.Brow_Raise_Inner_R
+  - Morpher_CC_Base_Body.Mouth_Lips_Open
