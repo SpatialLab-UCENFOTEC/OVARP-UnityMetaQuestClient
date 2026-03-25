@@ -18,6 +18,8 @@ public class OVAFClient : MonoBehaviour
     [Header("OVAF Server")]
     [SerializeField] private string editorServerUrl = "ws://localhost:8000";
     [SerializeField] private string questServerUrl  = "ws://192.168.x.x:8000";
+    // Set at runtime by ServerSetupUI; overrides serialized URLs when non-empty
+    private string _runtimeServerUrl;
     // client_id: identifies this connection in the WebSocket URL path
     [SerializeField] private string clientId    = "quest_vr_01";
     // sender: identifies the origin device in every message body
@@ -29,6 +31,7 @@ public class OVAFClient : MonoBehaviour
     [SerializeField] private string openAIApiKey;
 
     // Fired on main thread
+    public event Action            OnConnected;
     public event Action<string>    OnTextReply;
     public event Action<string>    OnUserTranscript;
     public event Action<AudioClip> OnTtsComplete;
@@ -61,10 +64,20 @@ public class OVAFClient : MonoBehaviour
     // Unity lifecycle
     // ══════════════════════════════════════════════════════════════════════════
 
-    private async void Start()
+    private void Start()
     {
         _cts = new CancellationTokenSource();
-        await TryConnectAsync();
+        // Connection is deferred to ServerSetupUI — call ConnectToServer() to initiate.
+    }
+
+    /// <summary>Called by ServerSetupUI with the user-entered server base URL (e.g. ws://192.168.1.5:8000).</summary>
+    public void ConnectToServer(string serverBaseUrl)
+    {
+        _runtimeServerUrl = serverBaseUrl;
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        _fallbackMode = false;
+        _ = TryConnectAsync();
     }
 
     private void Update()
@@ -85,9 +98,9 @@ public class OVAFClient : MonoBehaviour
 
     private string ResolveUrl()
     {
-        string base_ = Application.platform == RuntimePlatform.Android
-            ? questServerUrl
-            : editorServerUrl;
+        string base_ = !string.IsNullOrEmpty(_runtimeServerUrl)
+            ? _runtimeServerUrl
+            : (Application.platform == RuntimePlatform.Android ? questServerUrl : editorServerUrl);
         return $"{base_}/ws/client/{clientId}";
     }
 
@@ -108,6 +121,7 @@ public class OVAFClient : MonoBehaviour
             _fallbackMode   = false;
             _reconnectDelay = 1f;
             Debug.Log("[OVAFClient] Connected to OVAF server.");
+            _mainThreadQueue.Enqueue(() => OnConnected?.Invoke());
             _ = ReceiveLoopAsync();
         }
         catch (Exception e)
@@ -156,7 +170,6 @@ public class OVAFClient : MonoBehaviour
             return;
         }
 
-        Debug.Log($"[OVAFClient] Sending audio ({wavBytes.Length} bytes) to OVAF server.");
         _ = SendAudioAsync(wavBytes);
     }
 
@@ -207,9 +220,7 @@ public class OVAFClient : MonoBehaviour
 
                 if (result.EndOfMessage)
                 {
-                    string msg = builder.ToString();
-                    Debug.Log($"[OVAFClient] Received message ({msg.Length} chars): {msg.Substring(0, Mathf.Min(200, msg.Length))}");
-                    HandleMessage(msg);
+                    HandleMessage(builder.ToString());
                     builder.Clear();
                 }
             }
@@ -230,12 +241,9 @@ public class OVAFClient : MonoBehaviour
             string topic   = ExtractField(json, "topic");
             string command = ExtractField(json, "command");
 
-            Debug.Log($"[OVAFClient] HandleMessage topic='{topic}' command='{command}'");
-
             if (topic == "message" && command == "llm_reply")
             {
                 string text = ExtractField(json, "text");
-                Debug.Log($"[OVAFClient] llm_reply text='{text}'");
                 if (!string.IsNullOrEmpty(text))
                     _mainThreadQueue.Enqueue(() => OnTextReply?.Invoke(text));
                 else
@@ -254,7 +262,6 @@ public class OVAFClient : MonoBehaviour
                 {
                     byte[] decoded = Convert.FromBase64String(chunk);
                     _ttsBuffer.AddRange(decoded);
-                    Debug.Log($"[OVAFClient] tts_chunk decoded {decoded.Length} bytes (total {_ttsBuffer.Count})");
                 }
                 else
                 {
@@ -263,7 +270,6 @@ public class OVAFClient : MonoBehaviour
             }
             else if (topic == "audio" && command == "tts_complete")
             {
-                Debug.Log($"[OVAFClient] tts_complete — total bytes: {_ttsBuffer.Count}");
                 if (_ttsBuffer.Count == 0)
                 {
                     Debug.LogWarning("[OVAFClient] tts_complete but buffer is empty.");
@@ -275,7 +281,6 @@ public class OVAFClient : MonoBehaviour
                 try
                 {
                     var (samples, channels, sampleRate) = DecodeWavPcm(wavBytes);
-                    Debug.Log($"[OVAFClient] WAV decoded: {samples.Length} samples, {channels}ch, {sampleRate}Hz");
                     _mainThreadQueue.Enqueue(() =>
                     {
                         var clip = AudioClip.Create("tts_ovaf", samples.Length / channels,

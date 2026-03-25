@@ -10,6 +10,9 @@ using System.Text;
 #if UNITY_WEBGL && !UNITY_EDITOR
 using System.Runtime.InteropServices;
 #endif
+#if UNITY_ANDROID && !UNITY_EDITOR
+using UnityEngine.Android;
+#endif
 
 
 
@@ -105,9 +108,10 @@ public class Controller : MonoBehaviour
             Debug.LogError("[Controller] ovafClient is not assigned in the Inspector.");
         else
         {
-            ovafClient.OnTextReply       += OnAgentTextReply;
-            ovafClient.OnUserTranscript  += OnUserTranscriptReceived;
-            ovafClient.OnTtsComplete     += OnAgentTtsReady;
+            ovafClient.OnConnected        += OnServerConnected;
+            ovafClient.OnTextReply        += OnAgentTextReply;
+            ovafClient.OnUserTranscript   += OnUserTranscriptReceived;
+            ovafClient.OnTtsComplete      += OnAgentTtsReady;
             ovafClient.OnMovementCommand  += OnAgentMovement;
             ovafClient.OnAnimationCommand += OnAgentAnimation;
             ovafClient.OnAvatarCommand    += OnAgentAvatarChange;
@@ -120,6 +124,7 @@ public class Controller : MonoBehaviour
     {
         if (ovafClient != null)
         {
+            ovafClient.OnConnected        -= OnServerConnected;
             ovafClient.OnTextReply        -= OnAgentTextReply;
             ovafClient.OnUserTranscript   -= OnUserTranscriptReceived;
             ovafClient.OnTtsComplete      -= OnAgentTtsReady;
@@ -132,6 +137,8 @@ public class Controller : MonoBehaviour
     }
 
     // ── OVAFClient event handlers ─────────────────────────────────────────────
+
+    private void OnServerConnected() => _inputEnabled = true;
 
     private void OnAgentTextReply(string text)
     {
@@ -148,7 +155,6 @@ public class Controller : MonoBehaviour
 
     private void OnAgentTtsReady(AudioClip clip)
     {
-        Debug.Log($"[Controller] OnAgentTtsReady — clip={clip?.length:F2}s state={CurrentState}");
         audioSource.clip = clip;
         lipSync.audioSource.clip = clip;
         isAudioReady = true;
@@ -223,7 +229,6 @@ public class Controller : MonoBehaviour
         {
             if (isAudioReady)
             {
-                Debug.Log($"[Controller] Waiting→Speaking clip={audioSource.clip?.length:F2}s");
                 CurrentState = AgentState.Speaking;
                 _playbackStarted = false;
                 StartCoroutine(lipSync.AnalyzeAudioClip(audioSource.clip));
@@ -252,10 +257,13 @@ public class Controller : MonoBehaviour
 
     // ── Input ─────────────────────────────────────────────────────────────────
 
+    private bool _inputEnabled = false;
     private bool rightTriggerWasPressed = false;
 
     private void CheckInputTriggers()
     {
+        if (!_inputEnabled) return;
+
         // Desktop: spacebar toggle
         if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
         {
@@ -295,17 +303,30 @@ public class Controller : MonoBehaviour
         else
         {
             recIndicator.StopBlinking();
-            StopRecording();
-            anim.StartThinking();
+            bool sent = StopRecording();
+            if (sent) anim.StartThinking();
             isListening = false;
         }
     }
 
     IEnumerator RequestMicrophonePermission()
     {
-        // Android/Quest require explicit runtime permission for microphone
+#if UNITY_ANDROID && !UNITY_EDITOR
+        if (!Permission.HasUserAuthorizedPermission(Permission.Microphone))
+            Permission.RequestUserPermission(Permission.Microphone);
+
+        // Wait up to 10s for the user to respond to the permission dialog
+        float timeout = 10f;
+        while (!Permission.HasUserAuthorizedPermission(Permission.Microphone) && timeout > 0)
+        {
+            timeout -= Time.deltaTime;
+            yield return null;
+        }
+        hasMicPermission = Permission.HasUserAuthorizedPermission(Permission.Microphone);
+#else
         yield return Application.RequestUserAuthorization(UserAuthorization.Microphone);
         hasMicPermission = Application.HasUserAuthorization(UserAuthorization.Microphone);
+#endif
         if (!hasMicPermission)
             Debug.LogError("Microphone permission denied — voice input will not work.");
     }
@@ -322,7 +343,8 @@ public class Controller : MonoBehaviour
         audioSource2.clip = Microphone.Start(null, true, 10, AudioSettings.outputSampleRate);
     }
 
-    public void StopRecording()
+    // Returns true if audio was captured and sent, false if nothing was recorded.
+    public bool StopRecording()
     {
         // Capture actual recorded length before stopping to avoid trailing silence
         int recordedSamples = Microphone.GetPosition(null);
@@ -331,7 +353,7 @@ public class Controller : MonoBehaviour
         if (recordedSamples <= 0 || audioSource2.clip == null)
         {
             Debug.LogWarning("StopRecording: no audio captured.");
-            return;
+            return false;
         }
 
         // Trim clip to recorded length
@@ -343,6 +365,7 @@ public class Controller : MonoBehaviour
 
         SavWav.Save("mic.wav", trimmed);
         ovafClient.SendAudio(File.ReadAllBytes(outputFilePath));
+        return true;
     }
 
     // ── Speech queue ──────────────────────────────────────────────────────────
