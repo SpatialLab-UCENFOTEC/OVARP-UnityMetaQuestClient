@@ -412,7 +412,7 @@ MonoBehaviour:
   recIndicator: {fileID: 2282022764376776438}
   emotionController: {fileID: 0}
   headLookAt: {fileID: 0}
-  ovafClient: {fileID: 3331360973602959169}
+  serverConnector: {fileID: 3331360973602959169}
 --- !u!114 &3331360973602959169
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -424,7 +424,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f4aa764ff0580463ba2c743121b21b9c, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::OVAFClient
+  m_EditorClassIdentifier: Assembly-CSharp::OvarpServerConnector
   editorServerUrl: ws://localhost:8000
   questServerUrl: ws://192.168.100.38:8000
   clientId: quest_vr_01

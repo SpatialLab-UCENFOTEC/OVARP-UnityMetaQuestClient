@@ -1,6 +1,5 @@
-// Manages connection to the OVAF server via WebSocket.
-// Falls back to direct OpenAI APIs (Whisper → GPT-4 → TTS) if server is unreachable at startup.
-// Fires OnTextReply and OnTtsComplete regardless of backend — Controller is backend-agnostic.
+// WebSocket client for the OVARP server (/ws/client/{id}); OpenAI fallback if unreachable at connect.
+// Fires OnTextReply and OnTtsComplete regardless of backend — Controller stays transport-agnostic.
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
@@ -13,9 +12,9 @@ using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 
-public class OVAFClient : MonoBehaviour
+public class OvarpServerConnector : MonoBehaviour
 {
-    [Header("OVAF Server")]
+    [Header("OVARP server")]
     [SerializeField] private string editorServerUrl = "ws://localhost:8000";
     [SerializeField] private string questServerUrl  = "ws://192.168.x.x:8000";
     // Set at runtime by ServerSetupUI; overrides serialized URLs when non-empty
@@ -27,7 +26,7 @@ public class OVAFClient : MonoBehaviour
     [SerializeField] private string targetAgent = "agent_alpha";
     [SerializeField] private float  connectTimeoutSeconds = 3f;
 
-    [Header("OpenAI Fallback")]
+    [Header("OpenAI fallback")]
     [SerializeField] private string openAIApiKey;
 
     // Fired on main thread
@@ -120,7 +119,7 @@ public class OVAFClient : MonoBehaviour
             await _ws.ConnectAsync(new Uri(ResolveUrl()), linked.Token);
             _fallbackMode   = false;
             _reconnectDelay = 1f;
-            Debug.Log("[OVAFClient] Connected to OVAF server.");
+            Debug.Log("[OvarpServerConnector] Connected to OVARP server.");
             _mainThreadQueue.Enqueue(() => OnConnected?.Invoke());
             _ = ReceiveLoopAsync();
         }
@@ -129,7 +128,7 @@ public class OVAFClient : MonoBehaviour
             if (!_fallbackMode)
             {
                 _fallbackMode = true;
-                Debug.LogWarning($"[OVAFClient] Cannot reach OVAF server ({e.Message}). Using OpenAI fallback.");
+                Debug.LogWarning($"[OvarpServerConnector] Cannot reach OVARP server ({e.Message}). Using OpenAI fallback.");
                 InitFallbackHistory();
             }
         }
@@ -155,7 +154,7 @@ public class OVAFClient : MonoBehaviour
     // Public API
     // ══════════════════════════════════════════════════════════════════════════
 
-    /// <summary>Send recorded WAV bytes. Routes to OVAF server or OpenAI fallback.</summary>
+    /// <summary>Send recorded WAV bytes. Routes to OVARP WebSocket or OpenAI fallback.</summary>
     public void SendAudio(byte[] wavBytes)
     {
         if (_fallbackMode)
@@ -166,7 +165,7 @@ public class OVAFClient : MonoBehaviour
 
         if (_ws?.State != WebSocketState.Open)
         {
-            Debug.LogWarning("[OVAFClient] WebSocket not open — dropping audio.");
+            Debug.LogWarning("[OvarpServerConnector] WebSocket not open — dropping audio.");
             return;
         }
 
@@ -174,7 +173,7 @@ public class OVAFClient : MonoBehaviour
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // OVAF path
+    // OVARP WebSocket path
     // ══════════════════════════════════════════════════════════════════════════
 
     private async Task SendAudioAsync(byte[] wavBytes)
@@ -211,7 +210,7 @@ public class OVAFClient : MonoBehaviour
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
-                    Debug.LogWarning("[OVAFClient] Server closed connection. Reconnecting…");
+                    Debug.LogWarning("[OvarpServerConnector] Server closed connection. Reconnecting…");
                     _mainThreadQueue.Enqueue(ScheduleReconnect);
                     return;
                 }
@@ -228,7 +227,7 @@ public class OVAFClient : MonoBehaviour
         catch (OperationCanceledException) { /* shutting down */ }
         catch (Exception e)
         {
-            Debug.LogWarning($"[OVAFClient] Receive error: {e.Message}. Reconnecting…");
+            Debug.LogWarning($"[OvarpServerConnector] Receive error: {e.Message}. Reconnecting…");
             _mainThreadQueue.Enqueue(ScheduleReconnect);
         }
     }
@@ -247,7 +246,7 @@ public class OVAFClient : MonoBehaviour
                 if (!string.IsNullOrEmpty(text))
                     _mainThreadQueue.Enqueue(() => OnTextReply?.Invoke(text));
                 else
-                    Debug.LogWarning("[OVAFClient] llm_reply received but text was empty.");
+                    Debug.LogWarning("[OvarpServerConnector] llm_reply received but text was empty.");
             }
             else if (topic == "message" && command == "user_transcript")
             {
@@ -265,14 +264,14 @@ public class OVAFClient : MonoBehaviour
                 }
                 else
                 {
-                    Debug.LogWarning("[OVAFClient] tts_chunk received but audio_base64 was empty.");
+                    Debug.LogWarning("[OvarpServerConnector] tts_chunk received but audio_base64 was empty.");
                 }
             }
             else if (topic == "audio" && command == "tts_complete")
             {
                 if (_ttsBuffer.Count == 0)
                 {
-                    Debug.LogWarning("[OVAFClient] tts_complete but buffer is empty.");
+                    Debug.LogWarning("[OvarpServerConnector] tts_complete but buffer is empty.");
                     return;
                 }
                 byte[] wavBytes = _ttsBuffer.ToArray();
@@ -283,7 +282,7 @@ public class OVAFClient : MonoBehaviour
                     var (samples, channels, sampleRate) = DecodeWavPcm(wavBytes);
                     _mainThreadQueue.Enqueue(() =>
                     {
-                        var clip = AudioClip.Create("tts_ovaf", samples.Length / channels,
+                        var clip = AudioClip.Create("tts_ovarp", samples.Length / channels,
                                                     channels, sampleRate, false);
                         clip.SetData(samples, 0);
                         OnTtsComplete?.Invoke(clip);
@@ -291,7 +290,7 @@ public class OVAFClient : MonoBehaviour
                 }
                 catch (Exception e)
                 {
-                    Debug.LogError($"[OVAFClient] WAV decode failed: {e.Message}");
+                    Debug.LogError($"[OvarpServerConnector] WAV decode failed: {e.Message}");
                 }
             }
             else if (topic == "action" && command == "execute_state")
@@ -313,16 +312,16 @@ public class OVAFClient : MonoBehaviour
                 else if (!string.IsNullOrEmpty(looks))
                     _mainThreadQueue.Enqueue(() => OnLooksCommand?.Invoke(looks));
                 else
-                    Debug.LogWarning($"[OVAFClient] execute_state received but no recognized subcommand key.");
+                    Debug.LogWarning($"[OvarpServerConnector] execute_state received but no recognized subcommand key.");
             }
             else
             {
-                Debug.Log($"[OVAFClient] Unhandled message — topic='{topic}' command='{command}'");
+                Debug.Log($"[OvarpServerConnector] Unhandled message — topic='{topic}' command='{command}'");
             }
         }
         catch (Exception e)
         {
-            Debug.LogError($"[OVAFClient] HandleMessage error: {e.Message}");
+            Debug.LogError($"[OvarpServerConnector] HandleMessage error: {e.Message}");
         }
     }
 
@@ -408,7 +407,7 @@ public class OVAFClient : MonoBehaviour
 
         if (www.result != UnityWebRequest.Result.Success)
         {
-            Debug.LogError("[OVAFClient] Whisper error: " + www.error);
+            Debug.LogError("[OvarpServerConnector] Whisper error: " + www.error);
             yield break;
         }
 
@@ -440,7 +439,7 @@ public class OVAFClient : MonoBehaviour
                 yield break;
             }
 
-            Debug.LogError("[OVAFClient] GPT-4 error: " + www.error);
+            Debug.LogError("[OvarpServerConnector] GPT-4 error: " + www.error);
             www.Dispose();
         }
     }
@@ -467,7 +466,7 @@ public class OVAFClient : MonoBehaviour
                 yield break;
             }
 
-            Debug.LogError("[OVAFClient] TTS error: " + www.error);
+            Debug.LogError("[OvarpServerConnector] TTS error: " + www.error);
         }
     }
 

@@ -1,4 +1,4 @@
-// Bridges the existing Spatial Panel VR UI to OVAFClient.
+// Bridges the Spatial Panel VR UI to OvarpServerConnector.
 // Assign all fields in Inspector — no programmatic UI construction.
 using TMPro;
 using UnityEngine;
@@ -7,18 +7,27 @@ using UnityEngine.UIElements;
 
 public class ServerSetupUI : MonoBehaviour
 {
-    [SerializeField] private OVAFClient ovafClient;
+    [SerializeField] private OvarpServerConnector serverConnector;
     [SerializeField] private TMP_InputField ipInputField;
     [SerializeField] private UnityEngine.UI.Button connectButton;
     [SerializeField] private GameObject spatialPanelRoot; // root GameObject to hide after connect
     [SerializeField] private UIDocument chatDocument;     // show after connect
     [SerializeField] private string defaultIp = "192.168.100.38";
 
-    private const string PlayerPrefsKey = "ovaf_server_ip";
+    private const string PlayerPrefsKey = "ovarp_server_ip";
+    private const string LegacyPlayerPrefsKey = "ovaf_server_ip";
 
     private void Start()
     {
-        ipInputField.text = PlayerPrefs.GetString(PlayerPrefsKey, defaultIp);
+        string saved = PlayerPrefs.GetString(PlayerPrefsKey, "");
+        if (string.IsNullOrEmpty(saved) && PlayerPrefs.HasKey(LegacyPlayerPrefsKey))
+        {
+            saved = PlayerPrefs.GetString(LegacyPlayerPrefsKey, defaultIp);
+            PlayerPrefs.SetString(PlayerPrefsKey, saved);
+            PlayerPrefs.Save();
+        }
+        ipInputField.text = string.IsNullOrEmpty(saved) ? defaultIp : saved;
+
         connectButton.onClick.AddListener(OnConnectClicked);
 
         // XRI ray interactor sends pointer events that don't always trigger
@@ -37,15 +46,15 @@ public class ServerSetupUI : MonoBehaviour
             chatDocument.rootVisualElement.pickingMode = PickingMode.Ignore;
         }
 
-        if (ovafClient != null)
-            ovafClient.OnConnected += OnConnected;
+        if (serverConnector != null)
+            serverConnector.OnConnected += OnConnected;
         else
-            Debug.LogError("[ServerSetupUI] ovafClient not assigned.");
+            Debug.LogError("[ServerSetupUI] serverConnector not assigned.");
     }
 
     private void OnDestroy()
     {
-        if (ovafClient != null) ovafClient.OnConnected -= OnConnected;
+        if (serverConnector != null) serverConnector.OnConnected -= OnConnected;
         connectButton.onClick.RemoveListener(OnConnectClicked);
     }
 
@@ -68,7 +77,7 @@ public class ServerSetupUI : MonoBehaviour
         PlayerPrefs.SetString(PlayerPrefsKey, ip);
         PlayerPrefs.Save();
 
-        if (ovafClient == null) { Debug.LogError("[ServerSetupUI] ovafClient not assigned."); return; }
-        ovafClient.ConnectToServer($"ws://{ip}:8000");
+        if (serverConnector == null) { Debug.LogError("[ServerSetupUI] serverConnector not assigned."); return; }
+        serverConnector.ConnectToServer($"ws://{ip}:8000");
     }
 }

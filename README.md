@@ -6,21 +6,21 @@
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
 </p>
 
-<h1 align="center">🥽 Open Virtual Agent Framework — Unity Client</h1>
+<h1 align="center">🥽 Open Virtual Agent Research Platform — Unity Client</h1>
 
 <p align="center">
-  <strong>XR-native Unity client for driving embodied conversational agents across immersive platforms, featuring real-time voice interaction, lip-sync, emotion, gestures, and spatial movement — with a transparent OpenAI fallback when the OVAF server is unreachable.</strong>
+  <strong>XR-native Unity client (Meta Quest &amp; desktop) for driving embodied conversational agents across immersive platforms, featuring real-time voice interaction, lip-sync, emotion, gestures, and spatial movement — with a transparent OpenAI fallback when the OVARP server is unreachable.</strong>
 </p>
 
 <p align="center">
-  <em>Part of the <a href="https://github.com/SpatialLab-UCENFOTEC">SpatialLab</a> research initiative at Universidad CENFOTEC</em>
+  <em>Part of the <a href="https://github.com/SpatialLab-UCENFOTEC">SpatialLab</a> research initiative at Universidad CENFOTEC — cocreated with <a href="https://github.com/AURAxLab">AURAxLab</a> (Universidad de Costa Rica)</em>
 </p>
 
 ---
 
-## ✨ What is OVAF-Unity?
+## ✨ What is this repo?
 
-**OVAF-Unity** is the immersive frontend of the [Open Virtual Agent Framework](https://github.com/SpatialLab-UCENFOTEC/OpenVirtualAgentFramework-Server). It connects to the OVAF server to receive agent responses and render them through a fully animated 3D avatar — with synchronized speech, lip-sync, facial emotions, gestures, gaze, and spatial movement.
+**[OVARP-UnityMetaQuestClient](https://github.com/SpatialLab-UCENFOTEC/OVARP-UnityMetaQuestClient)** is the immersive Unity frontend for **[OVARP](https://github.com/AURAxLab/OVARP)** — the **Open Virtual Agent Research Platform** — maintained with [AURAxLab](https://github.com/AURAxLab) (UCR) and [SpatialLab](https://github.com/SpatialLab-UCENFOTEC) (Universidad CENFOTEC). It connects to an OVARP-compatible backend to receive agent responses and render them through a fully animated 3D avatar — synchronized speech, lip-sync, facial emotions, gestures, gaze, and spatial movement.
 
 - 🎙️ **Voice capture** — Microphone recording with WAV trimming, streamed to the server as base64 audio
 - 👄 **Lip-sync** — Real-time amplitude analysis drives blendshape-based mouth animation
@@ -30,7 +30,7 @@
 - 📐 **Spatial movement** — Agent repositioned relative to user camera orientation (`move_closer`, `move_farther`, `move_left`, `move_right`, `reset_position`)
 - 💬 **Chat UI** — Scrollable conversation log with user/agent bubbles, theming, and dark mode
 - 🖥️ **Server setup UI** — VR-native IP entry panel before session starts; IP persisted via PlayerPrefs
-- 🔁 **OpenAI fallback** — Transparent fallback to Whisper → GPT-4 → TTS-1 when the OVAF server is unreachable
+- 🔁 **OpenAI fallback** — Transparent fallback to Whisper → GPT-4 → TTS-1 when the OVARP server is unreachable
 
 ---
 
@@ -58,10 +58,10 @@
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  OVAFClient.cs — Transport Layer                                │
-│  ───────────────────────────────                                │
+│  OvarpServerConnector.cs — WebSocket + OpenAI fallback          │
+│  ─────────────────────────────────────                          │
 │  ┌──────────────────────┐  ┌───────────────────────────────┐    │
-│  │  OVAF Server (WS)    │  │  OpenAI Fallback              │    │
+│  │  OVARP Server (WS)   │  │  OpenAI Fallback              │    │
 │  │                      │  │                               │    │
 │  │  ws://<host>:8000    │  │  Whisper → GPT-4 → TTS-1      │    │
 │  │  /ws/client/<id>     │  │  (activated on connect fail)  │    │
@@ -86,7 +86,7 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-`Controller` is backend-agnostic — it reacts only to events from `OVAFClient`, regardless of whether they originate from the OVAF server or the OpenAI fallback.
+`Controller` is backend-agnostic — it reacts only to events from `OvarpServerConnector`, regardless of whether they originate from the OVARP server or the OpenAI fallback.
 
 ---
 
@@ -96,20 +96,20 @@
 
 - Unity 6 (URP)
 - Meta Quest 2 / 3 / Pro (for XR deployment) or any desktop for editor testing
-- A running [OVAF Server](https://github.com/SpatialLab-UCENFOTEC/OpenVirtualAgentFramework-Server) on the same LAN, **or** an [OpenAI API key](https://platform.openai.com/api-keys) for the fallback path
+- A running **[OVARP server](https://github.com/AURAxLab/OVARP)** on the same LAN, **or** an [OpenAI API key](https://platform.openai.com/api-keys) for the fallback path
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/SpatialLab-UCENFOTEC/OpenVirtualAgentFramework-Unity.git
+git clone https://github.com/SpatialLab-UCENFOTEC/OVARP-UnityMetaQuestClient.git
 ```
 
 Open the project in Unity 6 with the Universal Render Pipeline.
 
-### Configure OVAFClient
+### Configure `OvarpServerConnector`
 
-Select the `OVAFClient` GameObject in the Inspector and set:
+Select the GameObject with the **Ovarp Server Connector** component in the Inspector and set:
 
 | Field | Description |
 |---|---|
@@ -148,7 +148,7 @@ Real-time per-frame amplitude analysis of the TTS `AudioClip` drives mouth blend
 `EmotionController.cs` receives string commands from the server (`neutral`, `happy`, `sad`, `angry`, `surprised`) and blends the corresponding facial blendshapes.
 
 ### 🤖 Gestures & Animations
-`AnimController.cs` maps named string commands to Animator triggers. `GesturePlayer.cs` handles clip sequencing for multi-step gestures. Supported values are defined in the OVAF server's `config.yaml`.
+`AnimController.cs` maps named string commands to Animator triggers. `GesturePlayer.cs` handles clip sequencing for multi-step gestures. Supported values are defined in the OVARP server's `config.yaml`.
 
 ### 👀 Gaze
 `HeadLookAt.cs` accepts look targets from the server — `user` (main camera), `away`, or another agent ID — and smoothly transitions the avatar's head orientation.
@@ -202,15 +202,15 @@ The server responds across the following topics:
 ## 📁 Project Structure
 
 ```
-OpenVirtualAgentFramework-Unity/
+OVARP-UnityMetaQuestClient/
 │
 ├── Assets/
 │   ├── Scenes/
-│   │   └── OVAF.unity               # Main scene
+│   │   └── OVAF.unity               # Main scene (legacy asset name)
 │   │
 │   ├── Scripts/
 │   │   ├── Controller.cs            # Agent state machine, input, audio recording/playback
-│   │   ├── OVAFClient.cs            # WebSocket client + OpenAI fallback pipeline
+│   │   ├── OvarpServerConnector.cs  # OVARP WebSocket client + OpenAI fallback pipeline
 │   │   ├── GameManager.cs           # Singleton session config (names, colors, dark mode)
 │   │   ├── AnimController.cs        # Named animation triggers and thinking state
 │   │   ├── EmotionController.cs     # Blendshape-based facial expression control
@@ -239,7 +239,7 @@ OpenVirtualAgentFramework-Unity/
 
 ## 🎯 Roadmap
 
-- [x] ~~WebSocket connection to OVAF server~~
+- [x] ~~WebSocket connection to OVARP server~~
 - [x] ~~OpenAI fallback pipeline (Whisper → GPT-4 → TTS-1)~~
 - [x] ~~Lip-sync from TTS audio~~
 - [x] ~~Emotion and gesture command handling~~
@@ -253,18 +253,16 @@ OpenVirtualAgentFramework-Unity/
 
 ---
 
-## 👤 Author
+## 👤 Authors & cocreators
 
-**[Briam Mora](https://linktr.ee/briammora)**
+**[Briam Mora](https://linktr.ee/briammora)** — Entrepreneur & Researcher, SpatialLab, Universidad CENFOTEC
 
-📧 [bmora@ucenfotec.ac.cr](mailto:bmora@ucenfotec.ac.cr)
+📧 [bmora@ucenfotec.ac.cr](mailto:bmora@ucenfotec.ac.cr) · [SpatialLab — spatiallab.ucenfotec.ac.cr](https://spatiallab.ucenfotec.ac.cr/) · [linkedin.com/in/briammora](https://www.linkedin.com/in/briammora/)
 
-Entrepreneur & Researcher — SpatialLab, Universidad CENFOTEC
-
-[SpatialLab — spatiallab.ucenfotec.ac.cr](https://spatiallab.ucenfotec.ac.cr/) | [linkedin.com/in/briammora](https://www.linkedin.com/in/briammora/)
+**[AURAxLab](https://github.com/AURAxLab)** — Universidad de Costa Rica (UCR); cocreators of OVARP, including the **[reference server](https://github.com/AURAxLab/OVARP)** this Unity client targets over WebSocket.
 
 ---
 
 ## 📜 License
 
-[MIT License](LICENSE) © 2026 [SpatialLab — Universidad CENFOTEC](https://github.com/SpatialLab-UCENFOTEC)
+[MIT License](LICENSE) © 2026 [SpatialLab — Universidad CENFOTEC](https://github.com/SpatialLab-UCENFOTEC) · Backend reference: [AURAxLab/OVARP](https://github.com/AURAxLab/OVARP)

@@ -72,8 +72,8 @@ public class Controller : MonoBehaviour
     public EmotionController emotionController;
     public HeadLookAt headLookAt;
 
-    // OVAF / OpenAI backend (assigned in Inspector)
-    public OVAFClient ovafClient;
+    // OVARP WebSocket + OpenAI fallback (assigned in Inspector)
+    public OvarpServerConnector serverConnector;
 
     private Vector3 _agentInitialPosition;
     private const float MoveStep = 0.1f;
@@ -104,39 +104,39 @@ public class Controller : MonoBehaviour
 
         _agentInitialPosition = agent.transform.position;
 
-        if (ovafClient == null)
-            Debug.LogError("[Controller] ovafClient is not assigned in the Inspector.");
+        if (serverConnector == null)
+            Debug.LogError("[Controller] serverConnector is not assigned in the Inspector.");
         else
         {
-            ovafClient.OnConnected        += OnServerConnected;
-            ovafClient.OnTextReply        += OnAgentTextReply;
-            ovafClient.OnUserTranscript   += OnUserTranscriptReceived;
-            ovafClient.OnTtsComplete      += OnAgentTtsReady;
-            ovafClient.OnMovementCommand  += OnAgentMovement;
-            ovafClient.OnAnimationCommand += OnAgentAnimation;
-            ovafClient.OnAvatarCommand    += OnAgentAvatarChange;
-            ovafClient.OnEmotionCommand   += OnAgentEmotion;
-            ovafClient.OnLooksCommand     += OnAgentLooks;
+            serverConnector.OnConnected        += OnServerConnected;
+            serverConnector.OnTextReply        += OnAgentTextReply;
+            serverConnector.OnUserTranscript   += OnUserTranscriptReceived;
+            serverConnector.OnTtsComplete      += OnAgentTtsReady;
+            serverConnector.OnMovementCommand  += OnAgentMovement;
+            serverConnector.OnAnimationCommand += OnAgentAnimation;
+            serverConnector.OnAvatarCommand    += OnAgentAvatarChange;
+            serverConnector.OnEmotionCommand   += OnAgentEmotion;
+            serverConnector.OnLooksCommand     += OnAgentLooks;
         }
     }
 
     private void OnDestroy()
     {
-        if (ovafClient != null)
+        if (serverConnector != null)
         {
-            ovafClient.OnConnected        -= OnServerConnected;
-            ovafClient.OnTextReply        -= OnAgentTextReply;
-            ovafClient.OnUserTranscript   -= OnUserTranscriptReceived;
-            ovafClient.OnTtsComplete      -= OnAgentTtsReady;
-            ovafClient.OnMovementCommand  -= OnAgentMovement;
-            ovafClient.OnAnimationCommand -= OnAgentAnimation;
-            ovafClient.OnAvatarCommand    -= OnAgentAvatarChange;
-            ovafClient.OnEmotionCommand   -= OnAgentEmotion;
-            ovafClient.OnLooksCommand     -= OnAgentLooks;
+            serverConnector.OnConnected        -= OnServerConnected;
+            serverConnector.OnTextReply        -= OnAgentTextReply;
+            serverConnector.OnUserTranscript   -= OnUserTranscriptReceived;
+            serverConnector.OnTtsComplete      -= OnAgentTtsReady;
+            serverConnector.OnMovementCommand  -= OnAgentMovement;
+            serverConnector.OnAnimationCommand -= OnAgentAnimation;
+            serverConnector.OnAvatarCommand    -= OnAgentAvatarChange;
+            serverConnector.OnEmotionCommand   -= OnAgentEmotion;
+            serverConnector.OnLooksCommand     -= OnAgentLooks;
         }
     }
 
-    // ── OVAFClient event handlers ─────────────────────────────────────────────
+    // ── OvarpServerConnector event handlers ───────────────────────────────────
 
     private void OnServerConnected() => _inputEnabled = true;
 
@@ -364,7 +364,7 @@ public class Controller : MonoBehaviour
         trimmed.SetData(data, 0);
 
         SavWav.Save("mic.wav", trimmed);
-        ovafClient.SendAudio(File.ReadAllBytes(outputFilePath));
+        serverConnector.SendAudio(File.ReadAllBytes(outputFilePath));
         return true;
     }
 

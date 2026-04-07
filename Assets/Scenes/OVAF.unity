@@ -512,7 +512,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f4aa764ff0580463ba2c743121b21b9c, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::OVAFClient
+  m_EditorClassIdentifier: Assembly-CSharp::OvarpServerConnector
 --- !u!114 &495550987 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 3347639191714089763, guid: 8df43d76392eb4566b83a7987f888875, type: 3}
@@ -1667,7 +1667,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a40cb447c55214edfac07cd3e365e1dd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ServerSetupUI
-  ovafClient: {fileID: 495550986}
+  serverConnector: {fileID: 495550986}
   ipInputField: {fileID: 925646281}
   connectButton: {fileID: 557899242}
   spatialPanelRoot: {fileID: 789372502}
