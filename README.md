@@ -13,14 +13,14 @@
 </p>
 
 <p align="center">
-  <em>Part of the <a href="https://github.com/SpatialLab-UCENFOTEC">SpatialLab</a> research initiative at Universidad CENFOTEC — cocreated with <a href="https://github.com/AURAxLab">AURAxLab</a> (Universidad de Costa Rica)</em>
+  <em>Reference Unity implementation of the OVARP client protocol (WebSocket + avatar control).</em>
 </p>
 
 ---
 
 ## ✨ What is this repo?
 
-**[OVARP-UnityMetaQuestClient](https://github.com/SpatialLab-UCENFOTEC/OVARP-UnityMetaQuestClient)** is the immersive Unity frontend for **[OVARP](https://github.com/AURAxLab/OVARP)** — the **Open Virtual Agent Research Platform** — maintained with [AURAxLab](https://github.com/AURAxLab) (UCR) and [SpatialLab](https://github.com/SpatialLab-UCENFOTEC) (Universidad CENFOTEC). It connects to an OVARP-compatible backend to receive agent responses and render them through a fully animated 3D avatar — synchronized speech, lip-sync, facial emotions, gestures, gaze, and spatial movement.
+**This repository** is an immersive Unity frontend for **OVARP** (Open Virtual Agent Research Platform). It connects to an OVARP-compatible backend to receive agent responses and render them through a fully animated 3D avatar — synchronized speech, lip-sync, facial emotions, gestures, gaze, and spatial movement.
 
 - 🎙️ **Voice capture** — Microphone recording with WAV trimming, streamed to the server as base64 audio
 - 👄 **Lip-sync** — Real-time amplitude analysis drives blendshape-based mouth animation
@@ -96,13 +96,13 @@
 
 - Unity 6 (URP)
 - Meta Quest 2 / 3 / Pro (for XR deployment) or any desktop for editor testing
-- A running **[OVARP server](https://github.com/AURAxLab/OVARP)** on the same LAN, **or** an [OpenAI API key](https://platform.openai.com/api-keys) for the fallback path
+- A running **OVARP-compatible WebSocket server** on the same LAN, **or** an [OpenAI API key](https://platform.openai.com/api-keys) for the fallback path
 
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/SpatialLab-UCENFOTEC/OVARP-UnityMetaQuestClient.git
+git clone <this-repository-url>
+cd <repository-folder>
 ```
 
 Open the project in Unity 6 with the Universal Render Pipeline.
@@ -202,7 +202,7 @@ The server responds across the following topics:
 ## 📁 Project Structure
 
 ```
-OVARP-UnityMetaQuestClient/
+<repo>/
 │
 ├── Assets/
 │   ├── Scenes/
@@ -253,16 +253,12 @@ OVARP-UnityMetaQuestClient/
 
 ---
 
-## 👤 Authors & cocreators
+## Contributing
 
-**[Briam Mora](https://linktr.ee/briammora)** — Entrepreneur & Researcher, SpatialLab, Universidad CENFOTEC
-
-📧 [bmora@ucenfotec.ac.cr](mailto:bmora@ucenfotec.ac.cr) · [SpatialLab — spatiallab.ucenfotec.ac.cr](https://spatiallab.ucenfotec.ac.cr/) · [linkedin.com/in/briammora](https://www.linkedin.com/in/briammora/)
-
-**[AURAxLab](https://github.com/AURAxLab)** — Universidad de Costa Rica (UCR); cocreators of OVARP, including the **[reference server](https://github.com/AURAxLab/OVARP)** this Unity client targets over WebSocket.
+Issues and pull requests are welcome.
 
 ---
 
 ## 📜 License
 
-[MIT License](LICENSE) © 2026 [SpatialLab — Universidad CENFOTEC](https://github.com/SpatialLab-UCENFOTEC) · Backend reference: [AURAxLab/OVARP](https://github.com/AURAxLab/OVARP)
+MIT License. Add or consult a `LICENSE` file at the repository root for the full text.
